@@ -5,6 +5,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-green.svg)](https://fastapi.tiangolo.com/)
 [![RAG](https://img.shields.io/badge/Architecture-RAG-purple.svg)](https://arxiv.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Google Scholar](https://img.shields.io/badge/Google%20Scholar-Virbahu%20Jain-4285F4?logo=googlescholar&logoColor=white)](https://scholar.google.com/citations?user=4SN8o-QAAAAJ&hl=en)
 
 > **LLM-powered pipeline for automated GHG Protocol emissions factor classification, retrieval, and matching — turning unstructured procurement data into audit-ready carbon accounting.**
 >
@@ -28,6 +29,38 @@
 >        
 >         - ---
 >
+> ## 🖼️ RAG Pipeline Flow
+>
+> ![RAG Pipeline](https://img.shields.io/badge/Pipeline-Text%20→%20Embed%20→%20Retrieve%20→%20LLM%20→%20EF%20Match-blueviolet?style=for-the-badge)
+>
+> ```
+>  Procurement Text (free-form)
+>          │
+>          ▼
+>  ┌─────────────────┐
+>  │  Preprocessing  │  ← NER, unit normalization, UNSPSC inference
+>  └────────┬────────┘
+>           │
+>           ▼
+>  ┌─────────────────┐     ┌──────────────────────────┐
+>  │  Query Encoder  │────►│  Vector Store (ChromaDB)  │
+>  │  BGE-Large-EN   │     │  500K+ emission factors   │
+>  └─────────────────┘     └────────────┬─────────────┘
+>                                        │ Top-K candidates
+>                                        ▼
+>                           ┌────────────────────────┐
+>                           │  LLM Reasoning Layer   │
+>                           │  GPT-4o / Claude 3.5   │
+>                           └────────────┬───────────┘
+>                                        │
+>                     ┌──────────────────┼──────────────────┐
+>                     ▼                  ▼                  ▼
+>              High Conf.         Medium Conf.         Low Conf.
+>              Auto-accept        Flag review          Human loop
+> ```
+>
+> ---
+>
 > ## 🏗️ Architecture Diagram
 >
 > ```
@@ -35,59 +68,33 @@
 > ║          EMISSIONS FACTOR LLM — RAG PIPELINE ARCHITECTURE         ║
 > ╠════════════════════════════════════════════════════════════════════╣
 > ║                                                                    ║
-> ║  INPUT LAYER                                                       ║
-> ║  ┌─────────────────────────────────────────────────────────────┐  ║
-> ║  │  Raw Procurement Data (ERP / CSV / API)                     │  ║
-> ║  │  "500 units Phosphoric acid, 85%, industrial grade, China"  │  ║
-> ║  └─────────────────────────────┬───────────────────────────────┘  ║
-> ║                                 │                                   ║
-> ║  PREPROCESSING                  ▼                                   ║
-> ║  ┌─────────────────────────────────────────────────────────────┐  ║
-> ║  │  Text Normalization → Unit Extraction → Supplier Context    │  ║
-> ║  │  → UNSPSC Code Inference → Country/Region Tagging           │  ║
-> ║  └─────────────────────────────┬───────────────────────────────┘  ║
-> ║                                 │                                   ║
-> ║        ┌────────────────────────┼────────────────────────┐         ║
-> ║        │                        │                        │         ║
-> ║        ▼                        ▼                        ▼         ║
+> ║  INPUT: "500 units Phosphoric acid, 85%, industrial grade, China"  ║
+> ║         │                                                          ║
+> ║  ┌──────▼──────────────────────────────────────────────────────┐  ║
+> ║  │  Preprocessing: NER → Unit Extraction → Country Tagging     │  ║
+> ║  └──────┬──────────────────────────────────────────────────────┘  ║
+> ║         │                                                          ║
+> ║  ┌──────▼────────┐   ┌──────────────────────┐   ┌─────────────┐  ║
+> ║  │ Query Encoder │   │  Vector Store        │   │  Metadata   │  ║
+> ║  │ BGE-Large-EN  │──►│  ChromaDB / FAISS    │◄──│  Filters    │  ║
+> ║  │ (768-dim)     │   │  • EXIOBASE          │   │  • Country  │  ║
+> ║  └───────────────┘   │  • ecoinvent         │   │  • NACE     │  ║
+> ║                      │  • EPA EEIO          │   │  • Scope    │  ║
+> ║                      │  • GHG Protocol      │   └─────────────┘  ║
+> ║                      └──────────┬───────────┘                     ║
+> ║                                 │ Top-K results                    ║
+> ║                      ┌──────────▼───────────┐                     ║
+> ║                      │  LLM Reasoning Layer │                     ║
+> ║                      │  GPT-4o / Claude 3.5 │                     ║
+> ║                      │  Select + Explain    │                     ║
+> ║                      └──────────┬───────────┘                     ║
+> ║                                 │                                  ║
+> ║        ┌────────────────────────┼─────────────────────┐           ║
+> ║        ▼                        ▼                     ▼           ║
 > ║  ┌──────────────┐   ┌───────────────────┐   ┌────────────────────┐║
-> ║  │  QUERY       │   │  VECTOR STORE     │   │  METADATA FILTER   │║
-> ║  │  ENCODER     │   │  (ChromaDB/FAISS) │   │  • Country         │║
-> ║  │  BGE-Large-  │   │  • EXIOBASE       │   │  • Industry NACE   │║
-> ║  │  EN-v1.5     │   │  • ecoinvent      │   │  • Scope 3 Cat     │║
-> ║  │              │   │  • EPA EEIO       │   │  • Year            │║
-> ║  │  Query embed │   │  • GHG Protocol   │   └────────────────────┘║
-> ║  │  (768-dim)   │   │  500K+ factors    │                          ║
-> ║  └──────┬───────┘   └─────────┬─────────┘                          ║
-> ║         └───────────────────── ┘                                    ║
-> ║                        │ Top-K retrieved factors                    ║
-> ║                        ▼                                            ║
-> ║  ┌─────────────────────────────────────────────────────────────┐  ║
-> ║  │  LLM REASONING LAYER (GPT-4o / Claude 3.5 Sonnet)          │  ║
-> ║  │                                                             │  ║
-> ║  │  Prompt: "Given this procurement item and these candidate   │  ║
-> ║  │  emission factors, select the best match and explain why."  │  ║
-> ║  │                                                             │  ║
-> ║  │  Output: Selected EF + Confidence + Rationale + Source     │  ║
-> ║  └─────────────────────────────┬───────────────────────────────┘  ║
-> ║                                 │                                   ║
-> ║        ┌────────────────────────┼────────────────────────┐         ║
-> ║        │                        │                        │         ║
-> ║        ▼                        ▼                        ▼         ║
-> ║  ┌──────────────┐   ┌───────────────────┐   ┌────────────────────┐║
-> ║  │ HIGH CONF.   │   │  MEDIUM CONF.     │   │  LOW CONFIDENCE    │║
+> ║  │ HIGH (>0.92) │   │  MED (0.75–0.92)  │   │  LOW (<0.75)       │║
 > ║  │ Auto-accept  │   │  Flag for review  │   │  Human-in-loop     │║
-> ║  │ (>0.92)      │   │  (0.75–0.92)      │   │  (<0.75)           │║
 > ║  └──────────────┘   └───────────────────┘   └────────────────────┘║
-> ║                                 │                                   ║
-> ║  OUTPUT                         ▼                                   ║
-> ║  ┌─────────────────────────────────────────────────────────────┐  ║
-> ║  │  Audit-Ready Emission Factor Record                         │  ║
-> ║  │  • EF value (kgCO2e/unit) + uncertainty range               │  ║
-> ║  │  • GHG Protocol Scope 3 Category + Sub-category             │  ║
-> ║  │  • Source database + version + citation                     │  ║
-> ║  │  • Selection rationale (LLM-generated, auditable)           │  ║
-> ║  └─────────────────────────────────────────────────────────────┘  ║
 > ╚════════════════════════════════════════════════════════════════════╝
 > ```
 >
@@ -97,7 +104,7 @@
 >
 > ### The Emission Factor Matching Problem at Enterprise Scale
 >
-> A Fortune 500 company with $10B+ in annual procurement may have 2–5 million purchase order line items per year. Each must be mapped to an emission factor to compute Scope 3 Category 1 (Purchased Goods & Services) emissions.
+> A Fortune 500 company with $10B+ in annual procurement may have 2–5 million purchase order line items per year. Each must be mapped to an emission factor to compute Scope 3 Category 1 emissions.
 >
 > | Metric | Manual Process | LLM Pipeline |
 > |---|---|---|
@@ -116,16 +123,14 @@
 > >
 > > ### RAG-Powered Emission Factor Intelligence
 > >
-> > The pipeline combines two complementary AI capabilities: dense vector retrieval for finding semantically similar emission factors, and LLM reasoning for selecting the contextually correct one.
-> >
 > > **Stage 1 — Intelligent Preprocessing**
 > > Raw procurement text is parsed to extract chemical names, quantities, units, supplier country, and commodity classification. A fine-tuned NER model identifies substance names and resolves synonyms (e.g., "MEK" → "Methyl Ethyl Ketone" → CAS 78-93-3).
 > >
 > > **Stage 2 — Multi-Database Vector Retrieval**
-> > The processed query is encoded using `BAAI/bge-large-en-v1.5` and retrieved against a pre-indexed ChromaDB vector store containing 500,000+ emission factors from EXIOBASE, ecoinvent, EPA EEIO, and GHG Protocol. Metadata filters narrow results by geography, scope category, and industry.
+> > The processed query is encoded using `BAAI/bge-large-en-v1.5` and retrieved against a pre-indexed ChromaDB vector store containing 500,000+ emission factors. Metadata filters narrow results by geography, scope category, and industry.
 > >
 > > **Stage 3 — LLM-Powered Factor Selection**
-> > The top-K retrieved candidates are passed to GPT-4o or Claude 3.5 Sonnet with a carefully engineered prompt that asks the model to select the best match, explain the selection reasoning, assign a confidence score, and flag any uncertainty.
+> > The top-K retrieved candidates are passed to GPT-4o with a carefully engineered prompt that asks the model to select the best match, explain the selection reasoning, assign a confidence score, and flag any uncertainty.
 > >
 > > **Stage 4 — Confidence Routing and Audit Trail**
 > > High-confidence matches are auto-committed; medium-confidence results are queued for analyst review; low-confidence items escalate to specialist review. All decisions generate an immutable audit log.
@@ -139,7 +144,7 @@
 > > | Requirement | Version |
 > > |---|---|
 > > | Python | 3.10+ |
-> > | OpenAI / Anthropic API | GPT-4o or Claude 3.5 |
+> > | OpenAI API Key | GPT-4o access |
 > > | RAM | 8 GB (16 GB for local embeddings) |
 > > | Storage | 10 GB (vector store + databases) |
 > >
@@ -151,7 +156,6 @@
 > >
 > > python -m venv .venv
 > > source .venv/bin/activate
-> >
 > > pip install -r requirements.txt
 > >
 > > # Build vector store from emission factor databases
@@ -169,7 +173,6 @@
 > > ```python
 > > import httpx
 > >
-> > # Match a single procurement line item
 > > response = httpx.post("http://localhost:8000/api/v1/match", json={
 > >     "description": "500 kg Phosphoric acid 85% industrial grade",
 > >     "supplier_country": "CN",
@@ -178,26 +181,20 @@
 > >     "scope3_category": 1
 > > })
 > >
-> > result = response.json()
-> > print(result)
+> > print(response.json())
 > > ```
 > >
 > > ```json
 > > {
-> >   "item_id": "PO-2025-048291",
 > >   "matched_factor": {
 > >     "database": "ecoinvent_3.8",
 > >     "process_name": "phosphoric acid production, wet process | RoW",
 > >     "emission_factor_kgco2e_per_kg": 1.847,
 > >     "uncertainty_pct": 12.3,
-> >     "scope3_category": 1,
-> >     "scope3_subcategory": "Chemicals",
-> >     "nace_code": "C20.13",
-> >     "source_citation": "ecoinvent v3.8, UUID: a3c4..."
+> >     "scope3_category": 1
 > >   },
 > >   "confidence_score": 0.94,
 > >   "routing": "auto_accept",
-> >   "rationale": "Matched 'phosphoric acid' to ecoinvent wet-process production. China origin maps to RoW geography proxy. Industrial grade consistent with documented process.",
 > >   "total_scope3_kgco2e": 923.5,
 > >   "processing_time_ms": 287
 > > }
@@ -214,7 +211,6 @@
 > >     confidence_threshold=0.85
 > > )
 > >
-> > # Process entire purchase order file
 > > results = processor.process_csv(
 > >     input_path="data/purchase_orders_2025.csv",
 > >     output_path="data/scope3_matched_2025.csv",
@@ -223,7 +219,6 @@
 > >
 > > print(f"Processed: {results.total_items:,} items")
 > > print(f"Auto-accepted: {results.auto_accepted:,} ({results.auto_accepted_pct:.1f}%)")
-> > print(f"Flagged for review: {results.flagged:,}")
 > > print(f"Total Scope 3 Cat 1: {results.total_scope3_tco2e:,.1f} tCO2e")
 > > ```
 > >
@@ -237,7 +232,6 @@
 > > transformers = "^4.40"
 > > sentence-transformers = "^3.0"
 > > openai = "^1.30"
-> > anthropic = "^0.28"
 > > langchain = "^0.2"
 > > langchain-community = "^0.2"
 > > chromadb = "^0.5"
@@ -263,29 +257,40 @@
 > >
 > > ## 👤 Author
 > >
-> > **Virbahu Jain** — Founder & CEO, [Quantisage](https://quantisage.com)
-> >
-> > > *Building the AI Operating System for Scope 3 emissions management and supply chain decarbonization.*
-> > >
-> > > | | |
-> > > |---|---|
-> > > | 🎓 **Education** | MBA, Kellogg School of Management, Northwestern University |
-> > > | 🏭 **Experience** | 20+ years across manufacturing, life sciences, energy & public sector |
-> > > | 🌍 **Scope** | Supply chain operations on five continents |
-> > > | 📝 **Research** | Peer-reviewed publications on AI in sustainable supply chains |
-> > > | 🔬 **Patents** | IoT and AI solutions for manufacturing and logistics |
-> > >
-> > > [![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?logo=linkedin)](https://linkedin.com/in/virbahu)
-> > > [![GitHub](https://img.shields.io/badge/GitHub-virbahu-181717?logo=github)](https://github.com/virbahu)
-> > >
-> > > ---
-> > >
-> > > ## 📄 License
-> > >
-> > > MIT License — see [LICENSE](LICENSE) for details.
-> > >
-> > > ---
-> > >
-> > > <div align="center">
+> > <img src="https://avatars.githubusercontent.com/u/virbahu" width="80" align="left" style="margin-right:15px; border-radius:50%"/>
+
+**Virbahu Jain** — Founder & CEO, [Quantisage](https://quantisage.com)
+
+> *Building the AI Operating System for Scope 3 emissions management and supply chain decarbonization.*
+>
+> <br clear="left"/>
+
+| | |
+|---|---|
+| 🎓 **Education** | MBA, Kellogg School of Management, Northwestern University |
+| 🏭 **Experience** | 20+ years across manufacturing, life sciences, energy & public sector |
+| 🌍 **Scope** | Supply chain operations on five continents |
+| 📝 **Research** | Peer-reviewed publications on AI in sustainable supply chains |
+| 🔬 **Patents** | IoT and AI solutions for manufacturing and logistics |
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?logo=linkedin)](https://linkedin.com/in/virbahu)
+[![GitHub](https://img.shields.io/badge/GitHub-virbahu-181717?logo=github)](https://github.com/virbahu)
+[![Google Scholar](https://img.shields.io/badge/Google%20Scholar-Publications-4285F4?logo=googlescholar&logoColor=white)](https://scholar.google.com/citations?user=4SN8o-QAAAAJ&hl=en)
+[![Quantisage](https://img.shields.io/badge/Company-Quantisage-00C853)](https://quantisage.com)
+
+---
+
+## 📄 License
+
+MIT License — see [LICENSE](LICENSE) for details.
+
+---
+
+<div align="center">
+
+![Quantisage](https://img.shields.io/badge/Quantisage-Open%20Source%20Initiative-00C853?style=for-the-badge)
+![Supply Chain](https://img.shields.io/badge/AI-Supply%20Chain-blue?style=for-the-badge)
+![Climate](https://img.shields.io/badge/Climate-Tech-green?style=for-the-badge)
+
 <sub>Part of the <strong>Quantisage Open Source Initiative</strong> | AI × Supply Chain × Climate</sub>
 </div>
